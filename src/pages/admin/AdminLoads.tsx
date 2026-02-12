@@ -1,3 +1,5 @@
+// src/pages/admin/AdminLoads.tsx
+
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '@/services/api';
@@ -8,9 +10,11 @@ import { Loader2 } from 'lucide-react';
 import { Load } from '@/types';
 
 const statusColors: Record<string, string> = {
-  available: 'bg-accent/10 text-accent', pending: 'bg-secondary/10 text-secondary',
-  in_progress: 'bg-primary/10 text-primary', completed: 'bg-accent/10 text-accent',
-  cancelled: 'bg-destructive/10 text-destructive',
+  available: 'bg-green-100 text-green-700 border-green-200',
+  pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+  in_progress: 'bg-blue-100 text-blue-700 border-blue-200',
+  completed: 'bg-gray-100 text-gray-700 border-gray-200',
+  cancelled: 'bg-red-100 text-red-700 border-red-200',
 };
 
 export default function AdminLoads() {
@@ -29,10 +33,11 @@ export default function AdminLoads() {
         {loading ? (
           <div className="flex justify-center py-12"><Loader2 className="animate-spin text-primary" size={32} /></div>
         ) : (
-          <div className="rounded-xl border overflow-hidden">
+          <div className="rounded-xl border overflow-hidden bg-card">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>الشاحن</TableHead>
                   <TableHead>{t('origin')}</TableHead>
                   <TableHead>{t('destination')}</TableHead>
                   <TableHead>{t('weight')}</TableHead>
@@ -44,11 +49,12 @@ export default function AdminLoads() {
               <TableBody>
                 {loads.map(load => (
                   <TableRow key={load.id}>
+                    <TableCell className="font-medium">{load.profiles?.full_name || 'غير معروف'}</TableCell>
                     <TableCell>{load.origin}</TableCell>
                     <TableCell>{load.destination}</TableCell>
                     <TableCell>{load.weight} طن</TableCell>
                     <TableCell>{load.price} ر.س</TableCell>
-                    <TableCell><Badge className={statusColors[load.status]}>{t(load.status)}</Badge></TableCell>
+                    <TableCell><Badge variant="outline" className={statusColors[load.status]}>{t(load.status)}</Badge></TableCell>
                     <TableCell>{new Date(load.created_at).toLocaleDateString('ar')}</TableCell>
                   </TableRow>
                 ))}
