@@ -49,7 +49,7 @@ export default function AdminLoads() {
               <TableBody>
                 {loads.map(load => (
                   <TableRow key={load.id}>
-                    <TableCell className="font-medium">{load.profiles?.full_name || 'غير معروف'}</TableCell>
+                    <TableCell className="font-medium text-primary">{load.profiles?.full_name || 'غير معروف'}</TableCell>
                     <TableCell>{load.origin}</TableCell>
                     <TableCell>{load.destination}</TableCell>
                     <TableCell>{load.weight} طن</TableCell>
