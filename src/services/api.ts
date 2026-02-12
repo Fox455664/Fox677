@@ -111,13 +111,22 @@ export const api = {
       .from('driver_details')
       .select(`
         *,
-        profiles:id (
+        profiles (
           full_name,
           phone,
           avatar_url,
           email
         )
-      `);
+      `); // تم التعديل هنا لضمان جلب البيانات بشكل صحيح
+    if (error) throw error;
+    return data;
+  },
+
+  // دالة جلب السائقين الفرعيين
+  async getAllSubDrivers() {
+    const { data, error } = await supabase
+      .from('sub_drivers')
+      .select('*');
     if (error) throw error;
     return data;
   },
