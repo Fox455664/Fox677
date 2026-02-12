@@ -2,7 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { UserProfile, Load, AdminStats, UserRole } from '@/types';
 
 export const api = {
-  // --- Auth & Profile ---
+  // --- Auth & Profiles ---
   async loginByEmail(email: string, password: string) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
@@ -25,8 +25,30 @@ export const api = {
   },
 
   // --- Loads & Trips ---
+  async postLoad(loadData: any, userId: string) {
+    const { error } = await supabase.from('loads').insert([{
+      owner_id: userId, origin: loadData.origin, destination: loadData.destination,
+      weight: parseFloat(loadData.weight) || 0, price: parseFloat(loadData.price) || 0,
+      truck_size: loadData.truck_size, body_type: loadData.body_type,
+      description: loadData.description || '', type: loadData.type || 'general',
+      package_type: loadData.package_type, pickup_date: loadData.pickup_date,
+      status: 'available', distance: loadData.distance || 0
+    }]);
+    if (error) throw error;
+  },
+
   async getAvailableLoads() {
-    const { data, error } = await supabase.from('loads').select('*, profiles:owner_id(full_name, phone)').eq('status', 'available').order('created_at', { ascending: false });
+    const { data, error } = await supabase
+      .from('loads')
+      .select('*, profiles:owner_id(full_name, phone)')
+      .eq('status', 'available')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+
+  async getOtherLoadsByOwner(ownerId: string, currentLoadId: string) {
+    const { data, error } = await supabase.from('loads').select('*').eq('owner_id', ownerId).neq('id', currentLoadId).eq('status', 'available').limit(5);
     if (error) throw error;
     return data;
   },
@@ -46,21 +68,13 @@ export const api = {
     if (error) throw error;
   },
 
+  async deleteLoad(loadId: string) {
+    const { error } = await supabase.from('loads').delete().eq('id', loadId);
+    if (error) throw error;
+  },
+
   async getUserLoads(userId: string) {
     const { data, error } = await supabase.from('loads').select('*').or(`owner_id.eq.${userId},driver_id.eq.${userId}`).order('created_at', { ascending: false });
-    if (error) throw error;
-    return data;
-  },
-
-  // --- Drivers ---
-  async getAllDrivers() {
-    const { data, error } = await supabase.from('driver_details').select('*, profiles(full_name, phone, email, avatar_url, license_url, truck_photo_url)');
-    if (error) throw error;
-    return data;
-  },
-
-  async getAllSubDrivers() {
-    const { data, error } = await supabase.from('sub_drivers').select('*');
     if (error) throw error;
     return data;
   },
@@ -80,6 +94,19 @@ export const api = {
     await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId);
   },
 
+  // --- Drivers ---
+  async getAllDrivers() {
+    const { data, error } = await supabase.from('driver_details').select('*, profiles(full_name, phone, email, avatar_url)');
+    if (error) throw error;
+    return data;
+  },
+
+  async getAllSubDrivers() {
+    const { data, error } = await supabase.from('sub_drivers').select('*');
+    if (error) throw error;
+    return data;
+  },
+
   // --- Stats ---
   async getShipperStats(userId: string) {
     const { count: active } = await supabase.from('loads').select('*', { count: 'exact', head: true }).eq('owner_id', userId).in('status', ['available', 'in_progress']);
@@ -91,5 +118,26 @@ export const api = {
     const { count: active } = await supabase.from('loads').select('*', { count: 'exact', head: true }).eq('driver_id', userId).eq('status', 'in_progress');
     const { count: completed } = await supabase.from('loads').select('*', { count: 'exact', head: true }).eq('driver_id', userId).eq('status', 'completed');
     return { activeLoads: active || 0, completedTrips: completed || 0, rating: 4.8 };
+  },
+
+  async getAdminStats(): Promise<AdminStats> {
+    const { count: users } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
+    const { count: drivers } = await supabase.from('user_roles').select('*', { count: 'exact', head: true }).eq('role', 'driver');
+    const { count: shippers } = await supabase.from('user_roles').select('*', { count: 'exact', head: true }).eq('role', 'shipper');
+    const { count: activeLoads } = await supabase.from('loads').select('*', { count: 'exact', head: true }).in('status', ['available', 'in_progress']);
+    const { count: completed } = await supabase.from('loads').select('*', { count: 'exact', head: true }).eq('status', 'completed');
+    return { totalUsers: users || 0, totalDrivers: drivers || 0, totalShippers: shippers || 0, activeLoads: activeLoads || 0, completedTrips: completed || 0 };
+  },
+
+  async getAllUsers() {
+    const { data, error } = await supabase.from('profiles').select('*, user_roles(role)').order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+
+  async getAllLoads() {
+    const { data, error } = await supabase.from('loads').select('*, profiles:owner_id(full_name)').order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
   }
 };
