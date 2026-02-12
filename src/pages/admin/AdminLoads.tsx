@@ -1,67 +1,63 @@
-// src/pages/admin/AdminLoads.tsx
-
 import { useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { api } from '@/services/api';
+import { supabase } from '@/integrations/supabase/client';
 import AppLayout from '@/components/AppLayout';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Loader2 } from 'lucide-react';
-import { Load } from '@/types';
-
-const statusColors: Record<string, string> = {
-  available: 'bg-green-100 text-green-700 border-green-200',
-  pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-  in_progress: 'bg-blue-100 text-blue-700 border-blue-200',
-  completed: 'bg-gray-100 text-gray-700 border-gray-200',
-  cancelled: 'bg-red-100 text-red-700 border-red-200',
-};
+import { Loader2, MapPin, Box } from 'lucide-react';
 
 export default function AdminLoads() {
-  const { t } = useTranslation();
-  const [loads, setLoads] = useState<Load[]>([]);
+  const [loads, setLoads] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const fetchLoads = async () => {
+    const data = await api.getAllLoads();
+    setLoads(data || []);
+    setLoading(false);
+  };
+
   useEffect(() => {
-    api.getAllLoads().then(data => setLoads(data as Load[])).catch(console.error).finally(() => setLoading(false));
+    fetchLoads();
+    const channel = supabase.channel('admin-loads')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loads' }, () => fetchLoads())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   return (
     <AppLayout>
       <div className="space-y-4">
-        <h2 className="text-xl font-bold">{t('shipment_management')}</h2>
-        {loading ? (
-          <div className="flex justify-center py-12"><Loader2 className="animate-spin text-primary" size={32} /></div>
-        ) : (
-          <div className="rounded-xl border overflow-hidden bg-card">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>الشاحن</TableHead>
-                  <TableHead>{t('origin')}</TableHead>
-                  <TableHead>{t('destination')}</TableHead>
-                  <TableHead>{t('weight')}</TableHead>
-                  <TableHead>{t('price')}</TableHead>
-                  <TableHead>{t('status')}</TableHead>
-                  <TableHead>{t('date')}</TableHead>
+        <h2 className="text-xl font-black text-slate-800">إدارة كافة الشحنات</h2>
+        <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+          <Table>
+            <TableHeader className="bg-slate-50">
+              <TableRow>
+                <TableHead className="font-bold">المسار</TableHead>
+                <TableHead className="font-bold">الشاحن</TableHead>
+                <TableHead className="font-bold">الحالة</TableHead>
+                <TableHead className="font-bold">السعر</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loads.map((load) => (
+                <TableRow key={load.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-2 text-xs font-bold">
+                        <MapPin size={14} className="text-primary" /> {load.origin} ← {load.destination}
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-medium text-slate-600">{load.profiles?.full_name}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={
+                        load.status === 'available' ? 'text-emerald-600 bg-emerald-50' : 'text-blue-600 bg-blue-50'
+                    }>{load.status}</Badge>
+                  </TableCell>
+                  <TableCell className="font-black text-slate-800">{load.price} ر.س</TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loads.map(load => (
-                  <TableRow key={load.id}>
-                    <TableCell className="font-medium text-primary">{load.profiles?.full_name || 'غير معروف'}</TableCell>
-                    <TableCell>{load.origin}</TableCell>
-                    <TableCell>{load.destination}</TableCell>
-                    <TableCell>{load.weight} طن</TableCell>
-                    <TableCell>{load.price} ر.س</TableCell>
-                    <TableCell><Badge variant="outline" className={statusColors[load.status]}>{t(load.status)}</Badge></TableCell>
-                    <TableCell>{new Date(load.created_at).toLocaleDateString('ar')}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       </div>
     </AppLayout>
   );
