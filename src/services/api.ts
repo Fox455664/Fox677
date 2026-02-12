@@ -1,9 +1,145 @@
-// src/services/api.ts (جزء من الملف)
+// src/services/api.ts
 
-// ... (الدوال السابقة مثل registerUser, verifyEmailOtp, loginByEmail تبقى كما هي)
+import { supabase } from '@/integrations/supabase/client';
+import { UserProfile, Load, AdminStats, UserRole } from '@/types';
+
+export const api = {
+  // ==========================================
+  // Auth
+  // ==========================================
+  async registerUser(email: string, password: string, metadata: { full_name: string; phone: string; role: UserRole }) {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: metadata,
+        emailRedirectTo: window.location.origin,
+      },
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async verifyEmailOtp(email: string, token: string) {
+    const { data, error } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: 'signup'
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async resendOtp(email: string) {
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email
+    });
+    if (error) throw error;
+  },
+
+  async loginByEmail(email: string, password: string) {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', data.user.id)
+      .maybeSingle();
+
+    const { data: roleData } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', data.user.id)
+      .maybeSingle();
+
+    return { session: data.session, user: data.user, profile: profile as UserProfile, role: roleData?.role as UserRole };
+  },
+
+  async loginAdmin(email: string, password: string) {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+
+    const { data: roleData } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', data.user.id)
+      .maybeSingle();
+
+    if (roleData?.role !== 'admin') {
+      await supabase.auth.signOut();
+      throw new Error('ليس لديك صلاحيات الإدارة');
+    }
+    return { session: data.session, user: data.user, role: 'admin' as UserRole };
+  },
+
+  async forgotPassword(email: string) {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + '/reset-password',
+    });
+    if (error) throw error;
+  },
+
+  async logout() {
+    await supabase.auth.signOut();
+  },
+
+  async getProfile(userId: string) {
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+    if (error) throw error;
+    return data as UserProfile;
+  },
+
+  async updateProfile(userId: string, updates: Partial<UserProfile>) {
+    const { error } = await supabase.from('profiles').update(updates).eq('id', userId);
+    if (error) throw error;
+  },
 
   // ==========================================
-  // Loads (تعديل استعلامات الشحنات)
+  // Driver & Trucks
+  // ==========================================
+  async addTruck(truckData: any, userId: string) {
+    const { error } = await supabase.from('trucks').insert([{
+      owner_id: userId, plate_number: truckData.plate_number, brand: truckData.brand,
+      model_year: truckData.model_year, truck_type: truckData.truck_type, capacity: truckData.capacity,
+    }]);
+    if (error) throw error;
+  },
+
+  async getTrucks(userId: string) {
+    const { data, error } = await supabase.from('trucks').select('*').eq('owner_id', userId).order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteTruck(truckId: string) {
+    const { error } = await supabase.from('trucks').delete().eq('id', truckId);
+    if (error) throw error;
+  },
+
+  async addSubDriver(driverData: any, carrierId: string) {
+    const { error } = await supabase.from('sub_drivers').insert([{
+      carrier_id: carrierId, driver_name: driverData.driver_name,
+      driver_phone: driverData.driver_phone, id_number: driverData.id_number,
+      license_number: driverData.license_number,
+    }]);
+    if (error) throw error;
+  },
+
+  async getSubDrivers(carrierId: string) {
+    const { data, error } = await supabase.from('sub_drivers').select('*').eq('carrier_id', carrierId).order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteSubDriver(id: string) {
+    const { error } = await supabase.from('sub_drivers').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  // ==========================================
+  // Loads (تم التعديل لجلب بيانات صاحب الشحنة)
   // ==========================================
   async postLoad(loadData: any, userId: string) {
     const { error } = await supabase.from('loads').insert([{
@@ -14,48 +150,67 @@
       package_type: loadData.package_type, pickup_date: loadData.pickup_date,
       receiver_name: loadData.receiver_name, receiver_phone: loadData.receiver_phone,
       receiver_address: loadData.receiver_address, status: 'available',
+      // إضافة الحقول الناقصة إذا لزم الأمر
+      origin_lat: loadData.origin_lat, origin_lng: loadData.origin_lng,
+      dest_lat: loadData.dest_lat, dest_lng: loadData.dest_lng,
+      distance: loadData.distance
     }]);
     if (error) throw error;
   },
 
-  // هذا التعديل سيظهر اسم الشاحن للسائق
   async getAvailableLoads() {
-    // نستخدم profiles:owner_id لربط الجدول بناءً على owner_id
+    // جلب اسم صاحب الشحنة ورقم هاتفه
     const { data, error } = await supabase
       .from('loads')
       .select('*, profiles:owner_id(full_name, phone, avatar_url)') 
       .eq('status', 'available')
       .order('created_at', { ascending: false });
-      
     if (error) throw error;
     return data;
   },
 
   async getLoadById(id: string) {
-    const { data, error } = await supabase
-      .from('loads')
-      .select('*, profiles:owner_id(full_name, phone)')
-      .eq('id', id)
-      .maybeSingle();
+    const { data, error } = await supabase.from('loads').select('*, profiles:owner_id(full_name, phone)').eq('id', id).maybeSingle();
     if (error) throw error;
     return data;
   },
 
   async getUserLoads(userId: string) {
-    const { data, error } = await supabase
-      .from('loads')
-      .select('*')
-      .or(`owner_id.eq.${userId},driver_id.eq.${userId}`)
-      .order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('loads').select('*')
+      .or(`owner_id.eq.${userId},driver_id.eq.${userId}`).order('created_at', { ascending: false });
     if (error) throw error;
     return data;
   },
 
-// ... (الدوال الأخرى acceptLoad, updateLoadStatus, cancelLoad, submitBid, getLoadBids, etc تبقى كما هي)
+  async acceptLoad(loadId: string, driverId: string) {
+    const { error } = await supabase.from('loads').update({ status: 'in_progress', driver_id: driverId }).eq('id', loadId);
+    if (error) throw error;
+  },
+
+  async submitBid(loadId: string, driverId: string, price: number, message?: string) {
+    const { error } = await supabase.from('load_bids').insert([{ load_id: loadId, driver_id: driverId, price, message }]);
+    if (error) throw error;
+  },
 
   // ==========================================
-  // Admin (تعديل استعلامات الأدمن)
+  // Stats & Admin (تم التعديل لجلب البيانات الكاملة)
   // ==========================================
+  async getDriverStats(userId: string) {
+    const { count: active } = await supabase.from('loads').select('*', { count: 'exact', head: true })
+      .eq('driver_id', userId).eq('status', 'in_progress');
+    const { count: completed } = await supabase.from('loads').select('*', { count: 'exact', head: true })
+      .eq('driver_id', userId).eq('status', 'completed');
+    return { activeLoads: active || 0, completedTrips: completed || 0, rating: 4.8 };
+  },
+
+  async getShipperStats(userId: string) {
+    const { count: active } = await supabase.from('loads').select('*', { count: 'exact', head: true })
+      .eq('owner_id', userId).in('status', ['available', 'in_progress']);
+    const { count: completed } = await supabase.from('loads').select('*', { count: 'exact', head: true })
+      .eq('owner_id', userId).eq('status', 'completed');
+    return { activeLoads: active || 0, completedTrips: completed || 0 };
+  },
+
   async getAdminStats(): Promise<AdminStats> {
     const { count: users } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
     const { count: drivers } = await supabase.from('user_roles').select('*', { count: 'exact', head: true }).eq('role', 'driver');
@@ -72,34 +227,32 @@
     };
   },
 
-  // تعديل لجلب الأدوار مع المستخدمين
   async getAllUsers() {
+    // جلب الأدوار مع المستخدمين
     const { data, error } = await supabase
       .from('profiles')
-      .select('*, user_roles(role)') // هنا نجلب الدور من جدول user_roles
+      .select('*, user_roles(role)')
       .order('created_at', { ascending: false });
     if (error) throw error;
     return data;
   },
 
-  // تعديل لجلب اسم صاحب الشحنة في لوحة الأدمن
   async getAllLoads() {
+    // جلب اسم صاحب الشحنة للأدمن
     const { data, error } = await supabase
       .from('loads')
-      .select('*, profiles:owner_id(full_name)') // نجلب اسم المالك
+      .select('*, profiles:owner_id(full_name)')
       .order('created_at', { ascending: false });
     if (error) throw error;
     return data;
   },
 
-  // تعديل لجلب اسم صاحب التذكرة
   async getTickets() {
     const { data, error } = await supabase
       .from('support_tickets')
-      .select('*, profiles:user_id(full_name, email)') // نجلب بيانات المستخدم
+      .select('*, profiles:user_id(full_name, email)')
       .order('created_at', { ascending: false });
     if (error) throw error;
     return data;
   },
-
-// ... باقي الملف
+};
